@@ -1,0 +1,361 @@
+---
+title: 'Does the number of years married affect whether a person would participate in extramarital affairs? '
+author: "Ishaan Singh"
+date: "3/13/25"
+output:
+  html_document: default
+  header-includes: \usepackage{color}
+fontsize: 12pt
+margin: 1in
+---
+# Introduction
+Marital fidelity has been a topic of extensive discussion in psychology, sociology, and economics, given its implications for personal well-being and social stability. This study aims to investigate the factors influencing the probability of extramarital affairs using a dataset sourced from R.C. Fair’s (1978) research. 
+
+The primary objective of this analysis is to determine which variables significantly affect the likelihood of an individual engaging in an extramarital affair. Factors such as age, gender, years of marriage, presence of children, religiosity, education level, occupational status, and self-reported marital happiness are examined to assess their correlation with infidelity. By employing econometric techniques, we aim to quantify the impact of these variables and provide an evidence-based understanding of marital affairs.
+
+## Importance of the Analysis in Econometrics
+From an econometric perspective, studying the determinants of extramarital affairs allows us to apply statistical and regression analysis techniques to human behavior, particularly in decision-making related to relationships. 
+
+This analysis helps answer key questions such as:
+
+1. Do personal and socioeconomic factors significantly influence marital infidelity?
+
+2. How does self-perceived marital happiness correlate with the likelihood of affairs?
+
+3. What role does religiosity play in predicting marital fidelity?
+
+By employing econometric models, we can test hypotheses about human behavior, identify significant predictors, and potentially refine social theories regarding marital relationships. Furthermore, this study demonstrates how quantitative methods can be used to understand complex social issues, reinforcing the value of data-driven decision-making in social sciences.
+
+## Dataset Description
+The dataset used in this analysis is sourced from R.C. Fair’s (1978) study, which examines the determinants of extramarital affairs. It consists of 601 observations and 19 variables, capturing demographic, socioeconomic, and attitudinal factors that may influence marital infidelity.
+
+Key variables include:
+id: Unique identifier for each respondent
+male: Binary variable (1 = male, 0 = female)
+age: Age of the respondent in years
+yrsmarr: Number of years married
+kids: Binary variable (1 = has children, 0 = no children)
+educ: Years of schooling
+occup: Occupational status (measured using the reverse Hollingshead scale)
+relig: Level of religiosity (1 = anti-religious, 5 = very religious)
+ratemarr: Self-reported happiness in marriage (1 = very unhappy, 5 = very happy)
+naffairs: Number of affairs within the last year (continuous variable)
+affair: Binary variable indicating whether the respondent had at least one affair (1 = yes, 0 = no)
+
+
+## Analysis
+```{r setup, echo=FALSE, message=F, warning=F}
+
+#==============================================================================
+#   This chunk will be used for every assignment
+#==============================================================================
+
+# Clear the working space
+rm(list = ls())
+
+#Set working directory
+#setwd("/Users/bilwakhaparde/Documents/scu/winter2025/econ")  
+
+### Load the packages (all must have been installed)
+    library(tidyverse)
+    library(doBy)
+    library(foreign)
+    library(knitr)
+    library(lmtest)
+    library(readstata13)
+    library(sandwich)
+    library(stargazer)
+    library(AER)
+    library(gdata)
+    library(wooldridge)
+    library(openintro)
+    library(ggplot2)
+    library(dplyr)
+
+cse = function(reg){
+  rob=sqrt(diag(vcovHC(reg, type = "HC1")))
+  return(rob)
+}
+```
+
+### Stating our null and alternative hypothesis
+
+H0: β(yrsmarr) = 0
+
+HA: β(yrsmarr) ≠ 0
+
+### Loading Data
+```{r loading_data, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+#Loading data
+data("affairs")
+summary(affairs)
+```
+
+```{r descip_stats, echo=FALSE, message=FALSE, warning=FALSE, comment=""}
+# descriptive statistics using stargazer command
+stargazer(affairs[c("ratemarr", "yrsmarr", "kids", "naffairs", "affair")], 
+          type="text", digits=2, 
+          summary.stat=c("n", "mean", "median", "sd", "min", "max"), 
+          title="Variables of Interest", flip=FALSE, 
+          covariate.labels=c("Rate of Marriage", "Years Married", "Kids (binary)", "Number of Affairs", "Affair (binary)"))
+```
+### Descriptive Statistics Summary
+The dataset consists of 601 observations with no missing values, ensuring a complete analysis. The Rate of Marriage variable, which measures self-reported marital happiness on a scale of 1 to 5, has an average score of 3.93, indicating that most respondents view their marriages as happy or above average. The Years Married variable has a mean of 8.18 years, with a median of 7 years, suggesting that the majority of respondents have been in long-term marriages. The minimum duration is 0.12 years (approximately 1.5 months), while the maximum is 15 years, showing a diverse range of marriage durations in the sample.
+
+Regarding family structure, 72% of the respondents have children, as indicated by the Kids (binary) variable, which has a mean of 0.72 and a standard deviation of 0.45. This suggests that parenthood is prevalent among the respondents.
+
+The number of extramarital affairs in the past year (naffairs) has an average of 1.46 affairs, but the median is 0, meaning that most individuals did not report any affairs. However, some respondents engaged in multiple affairs, as reflected in the high standard deviation of 3.30, with values ranging from 0 to 12. This distribution suggests that a small group of individuals had significantly more affairs, skewing the mean upward. In fact, 25% of respondents (150 individuals) reported having at least one affair. The Affair (binary) variable, which indicates whether an individual had at least one affair, has a mean of 0.25 and a standard deviation of 0.43. This confirms that 25% of respondents reported engaging in at least one affair, while 75% remained faithful.
+
+## Initial EDA
+```{r graph1, echo=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+# histogram for rate of marriage
+
+ggplot(affairs, aes(x = ratemarr)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  labs(title = "Histogram of Marriage Rating", x = "Marriage Rating", y = "Count") +
+  theme_minimal()
+
+```
+
+
+### Graph 1
+The histogram shows the distribution of marriage ratings (1 = very unhappy, 5 = very happy). Most respondents rate their marriage as 4 or 5, with 5 being the most common, indicating overall marital satisfaction. Lower ratings (1 and 2) are less frequent, suggesting unhappy marriages are rare in the dataset. The increasing trend toward higher ratings aligns with the mean marriage rating of 3.93, highlighting a general bias toward positive self-reported marital happiness.
+
+```{r graph2, echo=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+# Count total number of cheaters and non-cheaters for each gender
+gender_cheat_counts <- affairs %>%
+  group_by(male, affair) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  mutate(Percent = round(Count / sum(Count) * 100, 2))  # Calculate percentage
+
+# Create labels with gender breakdown
+gender_labels <- gender_cheat_counts %>%
+  mutate(Label = paste(ifelse(male == 1, "Male", "Female"), 
+                       ifelse(affair == 1, "Cheated", "Not Cheated"), 
+                       "\n", Percent, "%"))
+
+# Create Pie Chart
+pie(gender_cheat_counts$Count, 
+    labels = gender_labels$Label, 
+    col = c("blue", "lightblue", "red", "pink"), 
+    main = "Cheated vs Not Cheated by Gender", 
+    radius = 1)
+```
+
+
+### Graph 2
+This pie chart illustrates the proportion of individuals who engaged in extramarital affairs versus those who remained faithful, categorized by gender. Overall, 24.96% of respondents reported cheating, while 75.04% did not, indicating that infidelity, though not the norm, is still a notable occurrence. When analyzed by gender, 40.43% of females and 34.61% of males remained faithful, showing a slightly higher fidelity rate among women. Among those who cheated, 12.98% were male and 11.98% were female, suggesting that infidelity rates are relatively similar between genders, with men engaging in affairs at a marginally higher rate. This graph emphasizes that while the majority of individuals in the dataset remained loyal, a significant minority engaged in infidelity.
+
+```{r graph3, echo=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+
+# Create a copy of the original affairs dataset
+affairs_copy <- affairs
+
+# Convert categorical variables for better readability in the copied dataset
+affairs_copy <- affairs_copy %>%
+  mutate(
+    male = factor(male, labels = c("Female", "Male")),
+    kids = factor(kids, labels = c("No Kids", "Has Kids")),
+    ratemarr = factor(ratemarr, labels = c("Very Unhappy", "Unhappy", "Average", "Happy", "Very Happy"))
+  )
+
+# Create a grouped bar plot using the copied dataset
+ggplot(affairs_copy, aes(x = ratemarr, fill = kids)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ male) +
+  labs(title = "Marital Happiness by Gender and Having Kids",
+       x = "Marital Happiness Rating",
+       y = "Count",
+       fill = "Children Status") +
+  theme_minimal()
+
+```
+
+### Graph 3
+The bar chart illustrates marital happiness ratings by gender and parental status (having kids vs. no kids). The x-axis represents marital happiness levels, while the y-axis indicates the count of respondents in each category. The chart is divided into two sections: female (left) and male (right).
+
+Key observations:
+
+Across both genders, individuals with children (blue bars) tend to report higher marital happiness than those without children.
+The "Very Happy" and "Happy" categories have the highest counts, especially among those with kids.
+Unhappiness levels (Very Unhappy and Unhappy) are more common among individuals without kids (red bars).
+
+# Regression modeling
+
+## Multiple Regression
+```{r multi_linear_reg, echo=FALSE, message=FALSE, warning=FALSE, comment=""}
+
+#Binary variable for happiness
+affairs$happy <- ifelse(affairs$ratemarr >= 3, 1, 0)
+
+# Create polynomial terms
+affairs$yrsmarr2 <- affairs$yrsmarr^2
+affairs$educ2 <- affairs$educ^2
+affairs$yrsmarr3 <- affairs$yrsmarr^3
+affairs$educ3 <- affairs$educ^3
+
+# Define models, adding complexity step by step
+m1 <- lm(naffairs ~ yrsmarr, data = affairs)
+m2 <- lm(naffairs ~ yrsmarr + kids, data = affairs)
+m3 <- lm(naffairs ~ yrsmarr + kids + happy, data = affairs)
+m4 <- lm(naffairs ~ yrsmarr + kids + happy + male, data = affairs)
+m5 <- lm(naffairs ~ yrsmarr + kids + happy + male + age, data = affairs)
+m6 <- lm(naffairs ~ yrsmarr + kids + happy + male + age + educ, data = affairs)
+m7 <- lm(naffairs ~ yrsmarr + kids + happy + male + age + educ + relig, data = affairs)
+m8 <- lm(naffairs ~ yrsmarr + kids + happy + male + age + educ + relig, data = affairs)
+m9 <- lm(naffairs ~ yrsmarr + kids + happy + male + age + educ + relig + yrsmarr2 + educ2, data = affairs)
+m10 <- lm(naffairs ~ yrsmarr + kids + happy + male + age + educ + relig + yrsmarr2 + educ2 + yrsmarr3 + educ3, data = affairs)
+
+stargazer(
+  m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, 
+  se = list(cse(m1), cse(m2), cse(m3), cse(m4), cse(m5), cse(m6), cse(m7), cse(m8), cse(m9), cse(m10)),
+  title = "Regression Results: What factors influence the number of affairs?", 
+  type = "text", 
+  star.cutoffs = NA,
+  df = FALSE,
+  digits = 3
+)
+```
+### Insights from the Regression Table
+The regression table presents multiple models examining the number of affairs (naffairs) as the dependent variable. Key independent variables include years married (yrsmarr), presence of children (kids), marital happiness (ratemarr), gender (male), age, education, and religiosity (relig). Additionally, polynomial terms for years married (yrsmarr2, yrsmarr3) and education (educ2, educ3) are included in later models to account for potential nonlinear relationships.
+
+### Key Observations:
+(All interpretations hold other variables constant.)
+
+Marital happiness strongly reduces the likelihood of extramarital affairs, as indicated by its consistently negative coefficient (-2.60 to -2.47). The variable for this is binary which considers marriages with a rate of happiness of 3 or above as 'happy' and below would be considered 'unhappy'. This suggests that individuals in happier marriages are significantly less likely to cheat, supporting the idea that relationship satisfaction is a key deterrent to infidelity. Meanwhile, the number of years married has a small but positive effect on affairs (coefficients ranging from 0.11 to 0.13), implying that as marriages last longer, the likelihood of cheating slightly increases. This aligns with theories that relationship fatigue or declining excitement in long-term marriages may contribute to infidelity.
+
+The presence of children has a weak and inconsistent effect on affairs, with a negative coefficient (-0.03 to -0.26), suggesting that having kids might slightly reduce the likelihood of cheating. However, this effect is not statistically significant, meaning that parenthood does not have a clear or strong impact on infidelity. Similarly, gender does not play a strong role, as the coefficient for being male (0.11 to 0.20) suggests that men may be slightly more likely to engage in affairs, but the effect is not statistically significant.
+
+Religiosity, however, shows a more consistent impact, with a negative coefficient (-0.48), indicating that more religious individuals are less likely to cheat. This supports the idea that religious beliefs and social norms discourage infidelity. Lastly, age and education have minimal influence, with age having a small negative effect (-0.05), suggesting that older individuals may be slightly less likely to engage in affairs, while education does not show a significant or consistent effect, indicating that higher education does not strongly predict infidelity.
+	
+## Testing for Nonlinear Relationships: Quadratic and Cubic Terms
+```{r lht, echo=FALSE, message=FALSE, warning=FALSE, comment=""}
+#Quadratic vs linear
+lht(m9, c("educ2 = 0", "yrsmarr2 = 0"))
+
+#Cubic vs quadratic
+lht(m10, c("educ3 = 0", "yrsmarr3 = 0"))
+```
+### Interpretation of hypothesis test
+To determine whether years married (yrsmarr) and education (educ) have nonlinear effects on the number of affairs, we conducted hypothesis tests comparing models with and without higher-order polynomial terms. The first test examined whether adding quadratic terms (yrsmarr², educ²) improved the model’s explanatory power. With a p-value of 0.2831, the results were not statistically significant, indicating that the relationship between years married, education, and the number of affairs remains largely linear. The second test evaluated the addition of cubic terms (yrsmarr³, educ³), yielding a p-value of 0.3802, which was also not statistically significant. This suggests that the cubic terms do not meaningfully enhance the model’s fit. Given these results, we conclude that a simple linear model is the best choice, and we select Model 7 as our baseline regression.
+
+```{r alternate, echo=FALSE, message=FALSE, warning=FALSE, comment=""}
+
+affairs <- affairs %>%
+  mutate(
+    male_kids = as.numeric(male) * as.numeric(kids),
+    kids_ratemarr = as.numeric(kids) * as.numeric(ratemarr)
+  )
+
+#alternate regressions
+m10 <- lm(naffairs ~ yrsmarr + kids + happy + male +  age + educ + relig + male_kids , data = affairs)
+m11 <- lm(naffairs ~ yrsmarr + kids + happy + male +  age + educ + relig + male_kids + kids_ratemarr , data = affairs)
+
+stargazer(m7,m10,m11,
+  se = list(cse(m7), cse(m10), cse(m11)),
+  title = "With Interaction Terms", 
+  type = "text", 
+  star.cutoffs = NA,
+  df = FALSE,
+  digits = 3)
+```
+### Interpretations
+In this table with the added interaction terms, yrsmarr, happy, and relig are statistically significant, meaning they have a strong relationship with the number of affairs. Being happier in marriage significantly reduces the number of affairs, while more years married is associated with an increase in affairs. Male, kids, and the interaction terms (male_kids and kids_ratemarr) are not statistically significant, meaning their effects are unclear or weak in this model.
+
+Adding interaction terms does not improve the model substantially. The male_kids interaction (being male and having kids) is positive but not significant, suggesting no clear relationship between having children and affairs for men. The kids_ratemarr interaction (kids and marital happiness) is also not significant, implying that having children does not meaningfully change the effect of happiness on affairs. The R² value remains nearly the same across models, meaning these interactions do not add much explanatory power. Therefore, we see that the baseline model is the best in which happiness and years married are the strongest predictors of affairs, while interactions do not contribute meaningful insights.
+
+## Probit Model And Marginal Effects
+```{r probit, echo=FALSE, message=FALSE, warning=FALSE, comment=""}
+p1 = glm(affair~yrsmarr+kids+ratemarr, family = binomial(link = "probit"), x=TRUE, data=affairs)
+
+p2 = glm(affair~yrsmarr+kids+ratemarr+male+age+educ+relig, family = binomial(link = "probit"), x=TRUE, data=affairs)
+
+p3 = glm(affair~yrsmarr+kids+ratemarr+male+age+educ+relig+male*kids, family = binomial(link = "probit"), x=TRUE, data=affairs)
+
+#marginal effect
+library(erer)
+#probit 
+p1_marg = maBina(p1, x.mean=TRUE, rev.dum=TRUE, digits=3)
+p2_marg = maBina(p2, x.mean=TRUE, rev.dum=TRUE, digits=3)
+p3_marg = maBina(p3, x.mean=TRUE, rev.dum=TRUE, digits=3)
+
+stargazer(p1, p2, p3, p1_marg, p2_marg,p3_marg, se=list(NULL, NULL, NULL, NULL, NULL, NULL), title="Probit and Marginal Effects", type="text", star.cutoffs=NA, df=FALSE, digits=4, keep.stat = c('n','ll','lr'))
+```
+
+### Probit Model Interpretetion
+The regression table presents Probit models estimating the probability of having an affair (affair = 1) as a function of various independent variables. Columns (1)-(3) show the standard Probit regression coefficients, while columns (4)-(6) present the marginal effects, which indicate the change in probability of an affair given a one-unit increase in the predictor.
+
+Model (3) and (6) include interaction terms between having kids (kidsHas Kids) and marital happiness (ratemarr) to examine whether the effect of happiness on infidelity varies by parental status.
+
+Key Findings & Insights
+
+(Coefficient interpretations are interpreted while holding all other variables constant)
+
+1. Marital Happiness Significantly Reduces the Probability of Affairs
+All models containing marital happiness (ratemarr) show negative coefficients, meaning that happier individuals are significantly less likely to have an affair.
+The marginal effect of -0.082 in our baseline model means that a one-unit increase in marital happiness reduces the probability of engaging in an affair by approximately 8.2%. 
+
+2. Years Married (yrsmarr) Has a Small but Positive Effect on Infidelity
+In the probit model, the coefficient for yrsmarr ranges from 0.0136 to 0.0539, suggesting a positive but weak relationship between years married and the probability of an affair. The marginal effect (0.0160) indicates that each additional year of marriage increases the probability of having an affair by 1.6 percentage points, but this effect is small and not consistently significant across models. 
+
+3. Having Kids (kids) Shows a Positive but Weak Effect
+The probit models (0.208 to 0.310) suggest that having children slightly increases the probability of an affair. The marginal effects (~ 0.061 to 0.089) indicate that having children raises the probability of an affair by 6.1% to 8.9%, but the standard errors are large, making this effect less reliable. Contrary to the assumption that children help deter infidelity, this finding suggests that having kids might slightly increase the likelihood of affairs. This could be due to relationship strain, reduced intimacy, or shifting priorities within the marriage. However, given the large standard errors, this effect is not statistically strong.
+
+4. Gender (male) Has a Small Positive Effect
+The probit coefficient for male is 0.188 to 0.335, and the marginal effect is 0.057 to 0.102, meaning men are 5.7% to 10.2% more likely to engage in an affair than women. However, the standard errors are relatively large, suggesting that gender's effect is not statistically strong. This aligns with existing research suggesting that men have a slightly higher likelihood of infidelity than women. However, the relatively weak effect size suggests that gender alone is not a strong predictor and that other factors (such as marital happiness) may play a more significant role.
+
+5. Religiosity (relig) Significantly Lowers the Probability of an Affair
+The probit coefficients for relig (~ -0.186) are negative and statistically significant across all models. The marginal effect (~ -0.056) indicates that a one-unit increase in religiosity reduces the probability of an affair by 5.6%.
+This supports the idea that religious individuals are less likely to engage in extramarital affairs, likely due to moral, ethical, or social norms discouraging infidelity. Religiosity appears to be an important factor against affairs.
+
+6. Age Shows a Small Negative Effect
+The probit coefficients for age (~ -0.024) suggest that older individuals are slightly less likely to have affairs. The marginal effect (~ -0.007) indicates that each additional year of age decreases the probability of an affair by 0.7%, but the effect is small.
+
+7. Education (educ) Has No Clear Effect
+The coefficients for educ are small (~ 0.015 to 0.017 in probit, 0.005 in marginal effects) and not statistically significant.
+
+8. Interaction Term (kids:male) Shows No Significant Effect
+The coefficient for kids:male is -0.196 in probit and -0.058 in marginal effects, but the large standard errors indicate that this effect is not statistically meaningful.
+
+
+## Final Insights
+- Marital happiness is the strongest predictor of fidelity. The happier a person is in their marriage, the lower the probability of an affair.
+- Having kids does not necessarily reduce affairs and may even increase infidelity in unhappy marriages. This suggests that children do not “fix” marital problems and could contribute to stress in unstable relationships.
+- Men are slightly more likely to cheat, but the effect is small.
+- Religion significantly reduces the likelihood of cheating, reinforcing moral and social norms.
+- Longer marriages slightly increase the probability of an affair, but the effect is minimal.
+- Older individuals are slightly less likely to cheat, while education has little effect.
+
+## Internal and External Validity 
+Internal Validity 
+- Omitted Variable Bias: Our models show correlation between some marriage-related factors and cheating. However, we are not able to establish causal relationship as there are other important confounded variables not added into the model like personality traits and external stressors. The low adjusted R^2 values also indicate the marriage factors we considered in the model only explain a small portion of the variations in cheating behavior. 
+
+- Errors in Variables Bias: The variable "naffairs" relies on self reported data. However, as infidelity is considered taboo and socially unacceptable, data collected might be subject to misreporting.  
+
+- Sample Selection Bias & Missing Data: As cheating is not socially acceptable, people who cheat may be less likely to participate in studies regarding relationships. This may lead to under reporting and does not accurately represent the true proportion of cheaters vs non-cheaters. 
+
+External Validity
+- As the data was originally recorded in 1978, this raises concerns regarding its relevance to modern relationship dynamics. Just in the past 25 years, social norms, gender roles and attitudes towards extramarital affairs have evolved significantly. As a result, findings using this dataset may not generalize well to present day relationships. 
+- The dataset is collected in the US so findings would not generalize well to other countries and cultures. This is mainly due to different cultures having different norms regarding infidelity, marriage and relationships. 
+
+# Conclusion
+Our analysis reveals that marital happiness is the strongest predictor of fidelity—individuals who report higher satisfaction in their marriage are significantly less likely to engage in extramarital affairs. Across all models, the coefficient for happiness remains negative and statistically significant, reinforcing the idea that relationship satisfaction plays a crucial role in reducing infidelity.
+
+The number of years married (yrsmarr) has a small but positive effect on the likelihood of affairs. While the impact is statistically significant, the effect size is small, suggesting that over time, the probability of cheating slightly increases, potentially due to relationship fatigue or declining excitement in long-term marriages.
+
+Religiosity also plays a key role in marital fidelity, with more religious individuals being significantly less likely to have an affair. This supports the idea that religious beliefs and moral values serve as deterrents against infidelity.
+
+Other demographic factors, such as having children and gender, do not show strong or consistent effects. While we initially expected that having kids would reduce the likelihood of affairs, our models suggest that parenthood does not meaningfully impact cheating behavior. Similarly, while men are often assumed to be more likely to cheat, our models show that gender has only a weak and statistically insignificant effect on infidelity.
+
+We tested multiple models, gradually increasing complexity. The baseline linear model provided clear insights into the main predictors of affairs, while quadratic and cubic models were tested to explore potential nonlinear effects of years married and education. However, hypothesis tests showed that adding higher-order terms did not significantly improve the model’s predictive power. This suggests that a simple linear relationship between years married and the likelihood of affairs is sufficient.
+
+We also introduced interaction terms (e.g., male_kids and kids_ratemarr) to test whether having children affects men and women differently or whether marital happiness interacts with parenthood. However, these interaction effects were not statistically significant, meaning they did not add meaningful explanatory power to the model.
+
+Overall, our findings suggest that marital happiness is the most reliable predictor of infidelity, while demographic factors like having children, gender, and education have limited influence. The dataset’s limitations, such as its age (from 1978) and potential underreporting of affairs, mean that results should be interpreted with caution. However, the conclusions align with common expectations—a fulfilling and happy marriage is the strongest safeguard against infidelity.
+
+
+
+
+  
+  
+
